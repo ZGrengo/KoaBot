@@ -18,13 +18,19 @@ export class ProductionsService {
   ) {}
 
   async create(dto: CreateProductionDto): Promise<ProductionWithOutputs> {
-    let userId = dto.producedByUserId;
+    let userId: string | undefined = dto.producedByUserId;
     if (dto.producedByTelegramId) {
       userId = await this.usersService.upsertByTelegramId(
         dto.producedByTelegramId,
         dto.producedByName || 'Unknown'
       );
     }
+
+    if (!userId) {
+      throw new Error('Either producedByUserId or producedByTelegramId must be provided');
+    }
+
+    const finalUserId: string = userId;
 
     const productionId = generateId(ID_PREFIX.production);
     const now = new Date().toISOString();
@@ -33,7 +39,7 @@ export class ProductionsService {
       id: productionId,
       occurredAt: dto.occurredAt,
       batchName: dto.batchName,
-      producedByUserId: userId,
+      producedByUserId: finalUserId,
       createdAt: now
     };
 
@@ -41,7 +47,7 @@ export class ProductionsService {
       production.id,
       production.occurredAt,
       production.batchName,
-      production.producedByUserId,
+      finalUserId,
       production.createdAt
     ]);
 

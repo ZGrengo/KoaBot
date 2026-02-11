@@ -13,13 +13,19 @@ export class WastagesService {
   ) {}
 
   async create(dto: CreateWastageDto): Promise<Wastage> {
-    let userId = dto.registeredByUserId;
+    let userId: string | undefined = dto.registeredByUserId;
     if (dto.registeredByTelegramId) {
       userId = await this.usersService.upsertByTelegramId(
         dto.registeredByTelegramId,
         dto.registeredByName || 'Unknown'
       );
     }
+
+    if (!userId) {
+      throw new Error('Either registeredByUserId or registeredByTelegramId must be provided');
+    }
+
+    const finalUserId: string = userId;
 
     const wastageId = generateId(ID_PREFIX.wastage);
     const now = new Date().toISOString();
@@ -33,7 +39,7 @@ export class WastagesService {
       unit: dto.unit,
       reason: dto.reason || null,
       attachmentUrl: dto.attachmentUrl || null,
-      registeredByUserId: userId,
+      registeredByUserId: finalUserId,
       createdAt: now
     };
 
@@ -46,7 +52,7 @@ export class WastagesService {
       wastage.unit,
       wastage.reason || '',
       wastage.attachmentUrl || '',
-      wastage.registeredByUserId,
+      finalUserId,
       wastage.createdAt
     ]);
 
@@ -54,13 +60,19 @@ export class WastagesService {
   }
 
   async createBatch(dto: CreateWastageBatchDto): Promise<Wastage[]> {
-    let userId = dto.registeredByUserId;
+    let userId: string | undefined = dto.registeredByUserId;
     if (dto.registeredByTelegramId) {
       userId = await this.usersService.upsertByTelegramId(
         dto.registeredByTelegramId,
         dto.registeredByName || 'Unknown'
       );
     }
+
+    if (!userId) {
+      throw new Error('Either registeredByUserId or registeredByTelegramId must be provided');
+    }
+
+    const finalUserId: string = userId;
 
     const wastages: Wastage[] = [];
     const now = new Date().toISOString();
@@ -76,8 +88,8 @@ export class WastagesService {
         unit: item.unit,
         reason: dto.reason || null,
         attachmentUrl: dto.attachmentUrl || null,
-        registeredByUserId: userId,
-        createdAt: now
+        registeredByUserId: finalUserId,
+      createdAt: now
       };
 
       await this.sheetsRepository.appendRow('wastages', [
@@ -89,7 +101,7 @@ export class WastagesService {
         wastage.unit,
         wastage.reason || '',
         wastage.attachmentUrl || '',
-        wastage.registeredByUserId,
+        finalUserId,
         wastage.createdAt
       ]);
 

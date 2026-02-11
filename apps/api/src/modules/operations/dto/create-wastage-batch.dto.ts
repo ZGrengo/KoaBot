@@ -18,7 +18,8 @@ class WastageItemDto {
   @IsNotEmpty()
   product: string;
 
-  @IsNumber()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 3 })
   quantity: number;
 
   @IsString()

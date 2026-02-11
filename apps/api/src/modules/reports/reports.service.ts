@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ReceptionsService } from '../operations/receptions.service';
 import { WastagesService } from '../operations/wastages.service';
 import { ProductionsService } from '../operations/productions.service';
@@ -7,6 +7,8 @@ import { chromium } from 'playwright';
 
 @Injectable()
 export class ReportsService {
+  private readonly logger = new Logger(ReportsService.name);
+
   constructor(
     private readonly receptionsService: ReceptionsService,
     private readonly wastagesService: WastagesService,
@@ -15,33 +17,47 @@ export class ReportsService {
   ) {}
 
   async generateWeeklyReport(from: string, to: string): Promise<Buffer> {
-    const [receptions, wastages, productions] = await Promise.all([
-      this.receptionsService.findByDateRange(from, to),
-      this.wastagesService.findByDateRange(from, to),
-      this.productionsService.findByDateRange(from, to)
-    ]);
+    let browser;
+    try {
+      const [receptions, wastages, productions] = await Promise.all([
+        this.receptionsService.findByDateRange(from, to),
+        this.wastagesService.findByDateRange(from, to),
+        this.productionsService.findByDateRange(from, to)
+      ]);
 
-    // Get user names for productions
-    const allUsers = await this.sheetsRepository.getRows<{
-      user_id: string;
-      name: string;
-    }>('users');
-    const userMap = new Map(allUsers.map((u) => [u.user_id, u.name]));
+      // Get user names for productions
+      const allUsers = await this.sheetsRepository.getRows<{
+        user_id: string;
+        name: string;
+      }>('users');
+      const userMap = new Map(allUsers.map((u) => [u.user_id, u.name]));
 
-    const html = this.generateHtmlReport(from, to, receptions, wastages, productions, userMap);
+      const html = this.generateHtmlReport(from, to, receptions, wastages, productions, userMap);
 
-    // Generate PDF using Playwright
-    const browser = await chromium.launch();
-    const page = await browser.newPage();
-    await page.setContent(html, { waitUntil: 'networkidle' });
-    const pdfBuffer = await page.pdf({
-      format: 'A4',
-      margin: { top: '20mm', right: '15mm', bottom: '20mm', left: '15mm' },
-      printBackground: true
-    });
-    await browser.close();
+      // Generate PDF using Playwright
+      browser = await chromium.launch({
+        headless: true,
+        args: ['--no-sandbox', '--disable-setuid-sandbox']
+      });
+      const page = await browser.newPage();
+      await page.setContent(html, { waitUntil: 'load' });
+      const pdfBuffer = await page.pdf({
+        format: 'A4',
+        margin: { top: '20mm', right: '15mm', bottom: '20mm', left: '15mm' },
+        printBackground: true
+      });
+      await browser.close();
 
-    return Buffer.from(pdfBuffer);
+      return Buffer.from(pdfBuffer);
+    } catch (error) {
+      this.logger.error('Error generating PDF report', error);
+      if (browser) {
+        await browser.close().catch(() => {
+          // Ignore errors when closing browser
+        });
+      }
+      throw error;
+    }
   }
 
   private generateHtmlReport(
@@ -52,6 +68,18 @@ export class ReportsService {
     productions: any[],
     userMap: Map<string, string>
   ): string {
+    // Escape HTML to prevent XSS and rendering issues
+    const escapeHtml = (text: string | number | null | undefined): string => {
+      if (text === null || text === undefined) return '';
+      const str = String(text);
+      return str
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    };
+
     const formatDate = (dateStr: string) => {
       const d = new Date(dateStr);
       return d.toLocaleDateString('es-ES', {
@@ -208,12 +236,12 @@ export class ReportsService {
       <tbody>
         ${receptionRows.map((row) => `
         <tr>
-          <td>${row.occurredAt}</td>
-          <td>${row.supplier}</td>
-          <td>${row.ref}</td>
-          <td>${row.product}</td>
-          <td>${row.quantity}</td>
-          <td>${row.unit}</td>
+          <td>${escapeHtml(row.occurredAt)}</td>
+          <td>${escapeHtml(row.supplier)}</td>
+          <td>${escapeHtml(row.ref)}</td>
+          <td>${escapeHtml(row.product)}</td>
+          <td>${escapeHtml(row.quantity)}</td>
+          <td>${escapeHtml(row.unit)}</td>
         </tr>
         `).join('')}
       </tbody>
@@ -238,12 +266,12 @@ export class ReportsService {
       <tbody>
         ${wastageRows.map((row) => `
         <tr>
-          <td>${row.occurredAt}</td>
-          <td>${row.ref}</td>
-          <td>${row.product}</td>
-          <td>${row.quantity}</td>
-          <td>${row.unit}</td>
-          <td>${row.reason}</td>
+          <td>${escapeHtml(row.occurredAt)}</td>
+          <td>${escapeHtml(row.ref)}</td>
+          <td>${escapeHtml(row.product)}</td>
+          <td>${escapeHtml(row.quantity)}</td>
+          <td>${escapeHtml(row.unit)}</td>
+          <td>${escapeHtml(row.reason)}</td>
         </tr>
         `).join('')}
       </tbody>
@@ -269,13 +297,13 @@ export class ReportsService {
       <tbody>
         ${productionRows.map((row) => `
         <tr>
-          <td>${row.occurredAt}</td>
-          <td>${row.batchName}</td>
-          <td>${row.ref}</td>
-          <td>${row.product}</td>
-          <td>${row.quantity}</td>
-          <td>${row.unit}</td>
-          <td>${row.producedBy}</td>
+          <td>${escapeHtml(row.occurredAt)}</td>
+          <td>${escapeHtml(row.batchName)}</td>
+          <td>${escapeHtml(row.ref)}</td>
+          <td>${escapeHtml(row.product)}</td>
+          <td>${escapeHtml(row.quantity)}</td>
+          <td>${escapeHtml(row.unit)}</td>
+          <td>${escapeHtml(row.producedBy)}</td>
         </tr>
         `).join('')}
       </tbody>

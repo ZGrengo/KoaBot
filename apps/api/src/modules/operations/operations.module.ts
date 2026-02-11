@@ -11,7 +11,8 @@ import { UsersModule } from '../users/users.module';
 @Module({
   imports: [SheetsModule, UsersModule],
   controllers: [ReceptionsController, WastagesController, ProductionsController],
-  providers: [ReceptionsService, WastagesService, ProductionsService]
+  providers: [ReceptionsService, WastagesService, ProductionsService],
+  exports: [ReceptionsService, WastagesService, ProductionsService]
 })
 export class OperationsModule {}
 

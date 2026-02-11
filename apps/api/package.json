@@ -8,7 +8,7 @@
     "build": "nest build",
     "start": "node dist/main.js",
     "lint": "eslint \"src/**/*.{ts,tsx}\"",
-    "bootstrap-sheets": "ts-node src/bootstrap-sheets.ts"
+    "bootstrap:sheets": "ts-node src/bootstrap-sheets.ts"
   },
   "dependencies": {
     "@nestjs/common": "^10.0.0",

@@ -12,17 +12,25 @@ export class ReportsController {
     @Query() query: QueryWeeklyReportDto,
     @Res() res: Response
   ) {
-    const pdfBuffer = await this.reportsService.generateWeeklyReport(
-      query.from,
-      query.to
-    );
+    try {
+      const pdfBuffer = await this.reportsService.generateWeeklyReport(
+        query.from,
+        query.to
+      );
 
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader(
-      'Content-Disposition',
-      `attachment; filename="reporte-semanal-${query.from}-${query.to}.pdf"`
-    );
-    res.send(pdfBuffer);
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="reporte-semanal-${query.from}-${query.to}.pdf"`
+      );
+      res.send(pdfBuffer);
+    } catch (error) {
+      res.status(500).json({
+        statusCode: 500,
+        message: 'Error generating PDF report',
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
   }
 }
 

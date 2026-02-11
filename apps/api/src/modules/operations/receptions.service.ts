@@ -19,13 +19,20 @@ export class ReceptionsService {
 
   async create(dto: CreateReceptionDto): Promise<ReceptionWithItems> {
     // Resolve user ID
-    let userId = dto.registeredByUserId;
+    let userId: string | undefined = dto.registeredByUserId;
     if (dto.registeredByTelegramId) {
       userId = await this.usersService.upsertByTelegramId(
         dto.registeredByTelegramId,
         dto.registeredByName || 'Unknown'
       );
     }
+
+    if (!userId) {
+      throw new Error('Either registeredByUserId or registeredByTelegramId must be provided');
+    }
+
+    // At this point, userId is guaranteed to be a string
+    const finalUserId: string = userId;
 
     const receptionId = generateId(ID_PREFIX.reception);
     const now = new Date().toISOString();
@@ -36,7 +43,7 @@ export class ReceptionsService {
       supplier: dto.supplier,
       total: dto.total || null,
       attachmentUrl: dto.attachmentUrl || null,
-      registeredByUserId: userId,
+      registeredByUserId: finalUserId,
       createdAt: now
     };
 
@@ -47,7 +54,7 @@ export class ReceptionsService {
       reception.supplier,
       reception.total || '',
       reception.attachmentUrl || '',
-      reception.registeredByUserId,
+      finalUserId,
       reception.createdAt
     ]);
 

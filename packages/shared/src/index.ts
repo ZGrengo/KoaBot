@@ -1,5 +1,3 @@
-import { customAlphabet } from 'nanoid';
-
 // --- Domain types ---
 
 export type Unit = 'ud' | 'kg' | 'L';
@@ -71,12 +69,21 @@ export interface ProductionWithOutputs {
   outputs: ProductionOutput[];
 }
 
-// --- ID helpers (using nanoid) ---
+// --- ID helpers ---
 
-const nanoid = customAlphabet('0123456789abcdefghijklmnopqrstuvwxyz', 16);
+const ALPHABET = '0123456789abcdefghijklmnopqrstuvwxyz';
+const ID_LENGTH = 16;
+
+function generateRandomId(): string {
+  let result = '';
+  for (let i = 0; i < ID_LENGTH; i++) {
+    result += ALPHABET[Math.floor(Math.random() * ALPHABET.length)];
+  }
+  return result;
+}
 
 export function generateId(prefix: string): string {
-  return `${prefix}_${nanoid()}`;
+  return `${prefix}_${generateRandomId()}`;
 }
 
 export const ID_PREFIX = {

@@ -5,6 +5,7 @@ import {
   IsIn,
   IsOptional
 } from 'class-validator';
+import { Type } from 'class-transformer';
 
 export class CreateWastageDto {
   @IsString()
@@ -19,7 +20,8 @@ export class CreateWastageDto {
   @IsNotEmpty()
   product: string;
 
-  @IsNumber()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 3 })
   quantity: number;
 
   @IsString()

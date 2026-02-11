@@ -87,7 +87,17 @@ export class SheetsRepository implements OnModuleInit {
     if (jsonPath) {
       // Load from file path
       const fs = await import('fs/promises');
-      const content = await fs.readFile(jsonPath, 'utf-8');
+      const path = await import('path');
+      // Resolve path relative to project root (or absolute path)
+      // If cwd is in apps/api, go up two levels to project root
+      let projectRoot = process.cwd();
+      if (projectRoot.endsWith('apps/api') || projectRoot.endsWith('apps\\api')) {
+        projectRoot = path.resolve(projectRoot, '../..');
+      }
+      const resolvedPath = path.isAbsolute(jsonPath)
+        ? jsonPath
+        : path.resolve(projectRoot, jsonPath);
+      const content = await fs.readFile(resolvedPath, 'utf-8');
       credentials = JSON.parse(content);
     } else if (jsonString) {
       // Parse inline JSON string

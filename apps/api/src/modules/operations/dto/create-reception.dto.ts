@@ -18,7 +18,8 @@ class ReceptionItemDto {
   @IsNotEmpty()
   product: string;
 
-  @IsNumber()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 3 })
   quantity: number;
 
   @IsString()
@@ -36,7 +37,8 @@ export class CreateReceptionDto {
   supplier: string;
 
   @IsOptional()
-  @IsNumber()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
   total?: number;
 
   @IsOptional()
