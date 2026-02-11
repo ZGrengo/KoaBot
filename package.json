@@ -1,0 +1,25 @@
+{
+  "name": "restaurant-bot-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@9.0.0",
+  "scripts": {
+    "dev": "concurrently -n api,bot -c cyan,magenta \"pnpm --filter api dev\" \"pnpm --filter bot dev\"",
+    "build": "pnpm --filter ./apps... build",
+    "lint": "pnpm --filter ./apps... lint && pnpm --filter ./packages... lint",
+    "format": "prettier --write .",
+    "api:bootstrap-sheets": "pnpm --filter api run bootstrap-sheets"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "concurrently": "^9.0.0",
+    "eslint": "^9.0.0",
+    "eslint-config-prettier": "^9.0.0",
+    "eslint-plugin-import": "^2.29.0",
+    "eslint-plugin-simple-import-sort": "^12.0.0",
+    "prettier": "^3.2.0",
+    "typescript": "^5.6.0"
+  }
+}
+
+
