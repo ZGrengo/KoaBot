@@ -56,5 +56,9 @@ export class CreateWastageBatchDto {
   @IsOptional()
   @IsString()
   registeredByName?: string;
+
+  @IsOptional()
+  @IsString()
+  createdByChatId?: string;
 }
 

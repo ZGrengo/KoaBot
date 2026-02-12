@@ -1,8 +1,12 @@
 import { Context } from 'telegraf';
 import { getState, setState, clearState } from './conversation-state';
-import { parseItemLine } from '@koabot/shared';
+import { parseItemLine } from '../parsing/item-parser';
 import { createReception } from '../api/receptions.api';
 import { upsertUserByTelegramId } from '../api/users.api';
+import { getRecentSuppliers } from '../api/operations.api';
+import { createConfirmationKeyboard, createDateKeyboard, createRecentOptionsKeyboard } from '../utils/keyboards';
+import { parseDateInput, dateToISO } from '../utils/date-helpers';
+import { createUndoKeyboard } from '../utils/keyboards';
 
 export async function handleReceptionConversation(ctx: Context): Promise<void> {
   const chatId = ctx.chat?.id;
@@ -11,13 +15,33 @@ export async function handleReceptionConversation(ctx: Context): Promise<void> {
   const state = getState(chatId);
 
   if (!state || state.type !== 'reception') {
-    // Start reception flow
-    setState(chatId, {
-      type: 'reception',
-      step: 'supplier',
-      data: {}
-    });
-    await ctx.reply('📦 Registro de Recepción\n\n¿Cuál es el nombre del proveedor?');
+    // Start reception flow - show recent suppliers
+    try {
+      const recentSuppliers = await getRecentSuppliers();
+      if (recentSuppliers.length > 0) {
+        await ctx.reply(
+          '📦 Registro de Recepción\n\n¿Cuál es el nombre del proveedor?',
+          {
+            reply_markup: createRecentOptionsKeyboard(recentSuppliers, 'supplier', 'Otro...')
+          }
+        );
+      } else {
+        await ctx.reply('📦 Registro de Recepción\n\n¿Cuál es el nombre del proveedor?');
+      }
+      setState(chatId, {
+        type: 'reception',
+        step: 'supplier',
+        data: {}
+      });
+    } catch (error) {
+      console.error('[handleReceptionConversation] Error fetching suppliers:', error);
+      await ctx.reply('📦 Registro de Recepción\n\n¿Cuál es el nombre del proveedor?');
+      setState(chatId, {
+        type: 'reception',
+        step: 'supplier',
+        data: {}
+      });
+    }
     return;
   }
 
@@ -34,29 +58,25 @@ export async function handleReceptionConversation(ctx: Context): Promise<void> {
       break;
 
     case 'date':
-      let dateStr = text.trim().toLowerCase();
-      if (dateStr === 'hoy' || dateStr === '' || dateStr === 'today') {
-        const today = new Date();
-        dateStr = today.toISOString().split('T')[0];
-      } else {
-        // Validate date format
-        const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
-        if (!dateRegex.test(dateStr)) {
-          await ctx.reply(
-            '❌ Formato de fecha inválido. Usa YYYY-MM-DD o envía "hoy".'
-          );
-          return;
-        }
+      const parsedDate = parseDateInput(text);
+      if (!parsedDate) {
+        await ctx.reply(
+          '❌ Formato de fecha inválido. Usa YYYY-MM-DD, "hoy" o "ayer".',
+          { reply_markup: createDateKeyboard() }
+        );
+        return;
       }
-      state.data.occurredAt = dateStr;
+      state.data.occurredAt = parsedDate;
+      state.data.dateISO = dateToISO(parsedDate);
       state.step = 'items';
       setState(chatId, state);
       await ctx.reply(
         '📋 Envía los items de la recepción, uno por línea:\n\n' +
-          'Formato: REF; nombre; cantidad; unidad\n\n' +
-          'Ejemplo:\n' +
-          'ABC123; Tomate; 10; kg\n' +
-          'DEF456; Lechuga; 5; ud\n\n' +
+          'Formatos aceptados:\n' +
+          '• "REF; nombre; cantidad; unidad" (ej: "ABC123; Tomate; 10; kg")\n' +
+          '• "nombre cantidad unidad" (ej: "Tomate 10 kg")\n' +
+          '• "cantidad unidad nombre" (ej: "10 kg Tomate")\n' +
+          '• "REF nombre cantidad unidad" (ej: "ABC123 Tomate 10 kg")\n\n' +
           'Puedes enviar múltiples líneas.'
       );
       break;
@@ -86,10 +106,9 @@ export async function handleReceptionConversation(ctx: Context): Promise<void> {
           `Items (${items.length}):\n` +
           items.map((item, i) => 
             `${i + 1}. ${item.ref} - ${item.product} (${item.quantity} ${item.unit})`
-          ).join('\n') +
-          `\n\n¿Confirmas el registro? Responde "si" o "no"`;
+          ).join('\n');
 
-        await ctx.reply(summary);
+        await ctx.reply(summary, { reply_markup: createConfirmationKeyboard() });
       } catch (error: any) {
         await ctx.reply(
           `❌ Error al parsear los items:\n${error.message}\n\n` +
@@ -99,6 +118,8 @@ export async function handleReceptionConversation(ctx: Context): Promise<void> {
       break;
 
     case 'confirm':
+      // Handle confirmation via button callback (handled in callbacks.ts)
+      // But also support text confirmation for backward compatibility
       const confirm = text.trim().toLowerCase();
       if (confirm === 'si' || confirm === 'sí' || confirm === 'yes' || confirm === 'y') {
         try {
@@ -108,26 +129,61 @@ export async function handleReceptionConversation(ctx: Context): Promise<void> {
           );
 
           await createReception({
-            occurredAt: state.data.occurredAt,
+            occurredAt: state.data.dateISO || state.data.occurredAt,
             supplier: state.data.supplier,
             registeredByTelegramId: String(ctx.from?.id),
             registeredByName: ctx.from?.first_name || ctx.from?.username || 'Unknown',
+            createdByChatId: String(chatId),
             items: state.data.items
           });
 
           clearState(chatId);
-          await ctx.reply('✅ Recepción registrada correctamente!');
+          await ctx.reply('✅ Recepción registrada correctamente!', {
+            reply_markup: createUndoKeyboard()
+          });
         } catch (error: any) {
           console.error('Error creating reception:', error);
           await ctx.reply(
             `❌ Error al registrar la recepción: ${error.message || 'Error desconocido'}`
           );
         }
-      } else {
+      } else if (confirm === 'no' || confirm === 'n') {
         clearState(chatId);
         await ctx.reply('❌ Registro cancelado.');
       }
       break;
+  }
+}
+
+// Export save function for callbacks
+export async function handleReceptionSave(ctx: Context, state: any): Promise<void> {
+  const chatId = ctx.chat?.id;
+  if (!chatId) return;
+
+  try {
+    await upsertUserByTelegramId(
+      String(ctx.from?.id),
+      ctx.from?.first_name || ctx.from?.username || 'Unknown'
+    );
+
+    await createReception({
+      occurredAt: state.data.dateISO || state.data.occurredAt,
+      supplier: state.data.supplier,
+      registeredByTelegramId: String(ctx.from?.id),
+      registeredByName: ctx.from?.first_name || ctx.from?.username || 'Unknown',
+      createdByChatId: String(chatId),
+      items: state.data.items
+    });
+
+    clearState(chatId);
+    await ctx.editMessageText('✅ Recepción registrada correctamente!', {
+      reply_markup: createUndoKeyboard()
+    });
+  } catch (error: any) {
+    console.error('Error creating reception:', error);
+    await ctx.editMessageText(
+      `❌ Error al registrar la recepción: ${error.message || 'Error desconocido'}`
+    );
   }
 }
 

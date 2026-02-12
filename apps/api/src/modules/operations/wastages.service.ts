@@ -10,7 +10,7 @@ export class WastagesService {
   constructor(
     private readonly sheetsRepository: SheetsRepository,
     private readonly usersService: UsersService
-  ) {}
+  ) { }
 
   async create(dto: CreateWastageDto): Promise<Wastage> {
     let userId: string | undefined = dto.registeredByUserId;
@@ -53,7 +53,9 @@ export class WastagesService {
       wastage.reason || '',
       wastage.attachmentUrl || '',
       finalUserId,
-      wastage.createdAt
+      wastage.createdAt,
+      dto.createdByChatId || '',
+      '' // deleted_at (empty)
     ]);
 
     return wastage;
@@ -89,7 +91,7 @@ export class WastagesService {
         reason: dto.reason || null,
         attachmentUrl: dto.attachmentUrl || null,
         registeredByUserId: finalUserId,
-      createdAt: now
+        createdAt: now
       };
 
       await this.sheetsRepository.appendRow('wastages', [
@@ -102,7 +104,9 @@ export class WastagesService {
         wastage.reason || '',
         wastage.attachmentUrl || '',
         finalUserId,
-        wastage.createdAt
+        wastage.createdAt,
+        dto.createdByChatId || '',
+        '' // deleted_at (empty)
       ]);
 
       wastages.push(wastage);

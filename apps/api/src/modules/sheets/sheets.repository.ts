@@ -24,7 +24,9 @@ export class SheetsRepository implements OnModuleInit {
       'total',
       'attachment_url',
       'registered_by_user_id',
-      'created_at'
+      'created_at',
+      'created_by_chat_id',
+      'deleted_at'
     ],
     reception_items: [
       'item_id',
@@ -44,14 +46,18 @@ export class SheetsRepository implements OnModuleInit {
       'reason',
       'attachment_url',
       'registered_by_user_id',
-      'created_at'
+      'created_at',
+      'created_by_chat_id',
+      'deleted_at'
     ],
     productions: [
       'production_id',
       'occurred_at',
       'batch_name',
       'produced_by_user_id',
-      'created_at'
+      'created_at',
+      'created_by_chat_id',
+      'deleted_at'
     ],
     production_outputs: [
       'output_id',
@@ -225,7 +231,7 @@ export class SheetsRepository implements OnModuleInit {
   }
 
   /**
-   * Query rows by date range
+   * Query rows by date range (excluding soft-deleted rows)
    */
   async queryByDateRange<T extends SheetRow>(
     sheetName: string,
@@ -239,11 +245,186 @@ export class SheetsRepository implements OnModuleInit {
     toDate.setHours(23, 59, 59, 999); // Include entire end day
 
     return allRows.filter((row) => {
+      // Exclude soft-deleted rows
+      if (row.deleted_at) return false;
+
       const dateStr = row[dateColumnName] as string;
       if (!dateStr) return false;
       const rowDate = new Date(dateStr);
       return rowDate >= fromDate && rowDate <= toDate;
     });
+  }
+
+  /**
+   * Get recent unique suppliers (top N, ordered by most recent)
+   */
+  async getRecentSuppliers(limit: number = 5): Promise<string[]> {
+    const receptions = await this.getRows<{
+      supplier: string;
+      created_at: string;
+      deleted_at?: string | null;
+    }>('receptions');
+
+    // Filter out deleted and get unique suppliers with their latest date
+    const supplierMap = new Map<string, Date>();
+    for (const rec of receptions) {
+      if (rec.deleted_at) continue;
+      const supplier = rec.supplier;
+      if (!supplier) continue;
+
+      const date = new Date(rec.created_at);
+      const existing = supplierMap.get(supplier);
+      if (!existing || date > existing) {
+        supplierMap.set(supplier, date);
+      }
+    }
+
+    // Sort by date (most recent first) and take top N
+    return Array.from(supplierMap.entries())
+      .sort((a, b) => b[1].getTime() - a[1].getTime())
+      .slice(0, limit)
+      .map(([supplier]) => supplier);
+  }
+
+  /**
+   * Get recent unique batch names (top N, ordered by most recent)
+   */
+  async getRecentBatchNames(limit: number = 5): Promise<string[]> {
+    const productions = await this.getRows<{
+      batch_name: string;
+      created_at: string;
+      deleted_at?: string | null;
+    }>('productions');
+
+    // Filter out deleted and get unique batch names with their latest date
+    const batchMap = new Map<string, Date>();
+    for (const prod of productions) {
+      if (prod.deleted_at) continue;
+      const batchName = prod.batch_name;
+      if (!batchName) continue;
+
+      const date = new Date(prod.created_at);
+      const existing = batchMap.get(batchName);
+      if (!existing || date > existing) {
+        batchMap.set(batchName, date);
+      }
+    }
+
+    // Sort by date (most recent first) and take top N
+    return Array.from(batchMap.entries())
+      .sort((a, b) => b[1].getTime() - a[1].getTime())
+      .slice(0, limit)
+      .map(([batchName]) => batchName);
+  }
+
+  /**
+   * Soft delete: update deleted_at column for a row
+   */
+  async softDelete(sheetName: string, idColumnName: string, id: string): Promise<void> {
+    const rows = await this.getRows<SheetRow>(sheetName);
+    const rowIndex = rows.findIndex((row) => row[idColumnName] === id);
+
+    if (rowIndex === -1) {
+      throw new Error(`Row with ${idColumnName}=${id} not found in ${sheetName}`);
+    }
+
+    // Find deleted_at column index
+    const headers = this.SHEET_CONFIG[sheetName as keyof typeof this.SHEET_CONFIG];
+    if (!headers) {
+      throw new Error(`Unknown sheet: ${sheetName}`);
+    }
+
+    const deletedAtIndex = headers.indexOf('deleted_at');
+    if (deletedAtIndex === -1) {
+      throw new Error(`Sheet ${sheetName} does not have deleted_at column`);
+    }
+
+    const actualRowIndex = rowIndex + 2; // +2: 1 header + 1-based index
+    const columnLetter = String.fromCharCode(65 + deletedAtIndex); // A=65
+
+    const deletedAt = new Date().toISOString();
+    await this.sheets.spreadsheets.values.update({
+      spreadsheetId: this.spreadsheetId,
+      range: `${sheetName}!${columnLetter}${actualRowIndex}`,
+      valueInputOption: 'RAW',
+      requestBody: {
+        values: [[deletedAt]]
+      }
+    });
+  }
+
+  /**
+   * Find the most recent operation (reception/wastage/production) for a chatId
+   * Returns { sheetName, idColumnName, id } or null
+   */
+  async findLastOperationByChatId(chatId: string | number): Promise<{
+    sheetName: string;
+    idColumnName: string;
+    id: string;
+  } | null> {
+    const chatIdStr = String(chatId);
+
+    // Check receptions
+    const receptions = await this.getRows<{
+      reception_id: string;
+      created_at: string;
+      created_by_chat_id?: string | null;
+      deleted_at?: string | null;
+    }>('receptions');
+
+    const validReceptions = receptions
+      .filter((r) => r.created_by_chat_id === chatIdStr && !r.deleted_at)
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+    if (validReceptions.length > 0) {
+      return {
+        sheetName: 'receptions',
+        idColumnName: 'reception_id',
+        id: validReceptions[0].reception_id
+      };
+    }
+
+    // Check wastages
+    const wastages = await this.getRows<{
+      wastage_id: string;
+      created_at: string;
+      created_by_chat_id?: string | null;
+      deleted_at?: string | null;
+    }>('wastages');
+
+    const validWastages = wastages
+      .filter((w) => w.created_by_chat_id === chatIdStr && !w.deleted_at)
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+    if (validWastages.length > 0) {
+      return {
+        sheetName: 'wastages',
+        idColumnName: 'wastage_id',
+        id: validWastages[0].wastage_id
+      };
+    }
+
+    // Check productions
+    const productions = await this.getRows<{
+      production_id: string;
+      created_at: string;
+      created_by_chat_id?: string | null;
+      deleted_at?: string | null;
+    }>('productions');
+
+    const validProductions = productions
+      .filter((p) => p.created_by_chat_id === chatIdStr && !p.deleted_at)
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+    if (validProductions.length > 0) {
+      return {
+        sheetName: 'productions',
+        idColumnName: 'production_id',
+        id: validProductions[0].production_id
+      };
+    }
+
+    return null;
   }
 
   /**

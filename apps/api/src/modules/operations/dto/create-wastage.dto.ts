@@ -47,5 +47,9 @@ export class CreateWastageDto {
   @IsOptional()
   @IsString()
   registeredByName?: string;
+
+  @IsOptional()
+  @IsString()
+  createdByChatId?: string;
 }
 

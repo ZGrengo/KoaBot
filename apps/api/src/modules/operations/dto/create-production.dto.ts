@@ -52,5 +52,9 @@ export class CreateProductionDto {
   @IsOptional()
   @IsString()
   producedByName?: string;
+
+  @IsOptional()
+  @IsString()
+  createdByChatId?: string;
 }
 

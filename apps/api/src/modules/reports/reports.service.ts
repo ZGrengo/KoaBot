@@ -14,7 +14,7 @@ export class ReportsService {
     private readonly wastagesService: WastagesService,
     private readonly productionsService: ProductionsService,
     private readonly sheetsRepository: SheetsRepository
-  ) {}
+  ) { }
 
   async generateWeeklyReport(from: string, to: string): Promise<Buffer> {
     let browser;
@@ -107,7 +107,8 @@ export class ReportsService {
         ref: item.ref,
         product: item.product,
         quantity: item.quantity,
-        unit: item.unit
+        unit: item.unit,
+        registeredBy: userMap.get(rec.reception.registeredByUserId) || rec.reception.registeredByUserId
       }))
     );
 
@@ -117,7 +118,8 @@ export class ReportsService {
       product: w.product,
       quantity: w.quantity,
       unit: w.unit,
-      reason: w.reason || '-'
+      reason: w.reason || '-',
+      registeredBy: userMap.get(w.registeredByUserId) || w.registeredByUserId
     }));
 
     const productionRows = productions.flatMap((prod) =>
@@ -138,7 +140,7 @@ export class ReportsService {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Reporte Semanal</title>
+  <title>Reporte</title>
   <style>
     * {
       margin: 0;
@@ -215,7 +217,7 @@ export class ReportsService {
 </head>
 <body>
   <div class="header">
-    <h1>Reporte Semanal</h1>
+    <h1>Reporte</h1>
     <div class="date-range">${formatDate(from)} - ${formatDate(to)}</div>
   </div>
 
@@ -231,6 +233,7 @@ export class ReportsService {
           <th>Producto</th>
           <th>Cantidad</th>
           <th>Unidad</th>
+          <th>Registrado por</th>
         </tr>
       </thead>
       <tbody>
@@ -242,6 +245,7 @@ export class ReportsService {
           <td>${escapeHtml(row.product)}</td>
           <td>${escapeHtml(row.quantity)}</td>
           <td>${escapeHtml(row.unit)}</td>
+          <td>${escapeHtml(row.registeredBy)}</td>
         </tr>
         `).join('')}
       </tbody>
@@ -261,6 +265,7 @@ export class ReportsService {
           <th>Cantidad</th>
           <th>Unidad</th>
           <th>Motivo</th>
+          <th>Registrado por</th>
         </tr>
       </thead>
       <tbody>
@@ -272,6 +277,7 @@ export class ReportsService {
           <td>${escapeHtml(row.quantity)}</td>
           <td>${escapeHtml(row.unit)}</td>
           <td>${escapeHtml(row.reason)}</td>
+          <td>${escapeHtml(row.registeredBy)}</td>
         </tr>
         `).join('')}
       </tbody>

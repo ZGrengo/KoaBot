@@ -2,6 +2,7 @@ import { Telegraf } from 'telegraf';
 import { config } from 'dotenv';
 import { setupCommands } from './commands';
 import { setupConversations } from './conversations';
+import { setupCallbacks } from './handlers/callbacks';
 
 config();
 
@@ -13,9 +14,10 @@ if (!botToken) {
 
 const bot = new Telegraf(botToken);
 
-// Setup commands and conversations
+// Setup commands, conversations, and callbacks
 setupCommands(bot);
 setupConversations(bot);
+setupCallbacks(bot);
 
 // Error handling
 bot.catch((err, ctx) => {

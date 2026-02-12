@@ -57,6 +57,10 @@ export class CreateReceptionDto {
   @IsString()
   registeredByName?: string;
 
+  @IsOptional()
+  @IsString()
+  createdByChatId?: string;
+
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => ReceptionItemDto)

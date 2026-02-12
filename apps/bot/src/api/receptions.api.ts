@@ -6,8 +6,9 @@ export interface CreateReceptionRequest {
   supplier: string;
   total?: number;
   attachmentUrl?: string;
-  registeredByTelegramId: string;
-  registeredByName: string;
+  registeredByTelegramId?: string;
+  registeredByName?: string;
+  createdByChatId?: string;
   items: {
     ref: string;
     product: string;

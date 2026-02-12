@@ -15,7 +15,7 @@ export class ReceptionsService {
   constructor(
     private readonly sheetsRepository: SheetsRepository,
     private readonly usersService: UsersService
-  ) {}
+  ) { }
 
   async create(dto: CreateReceptionDto): Promise<ReceptionWithItems> {
     // Resolve user ID
@@ -55,7 +55,9 @@ export class ReceptionsService {
       reception.total || '',
       reception.attachmentUrl || '',
       finalUserId,
-      reception.createdAt
+      reception.createdAt,
+      dto.createdByChatId || '',
+      '' // deleted_at (empty)
     ]);
 
     // Insert items

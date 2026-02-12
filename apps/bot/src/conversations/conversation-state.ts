@@ -1,5 +1,5 @@
 export interface ConversationState {
-  type: 'reception' | 'wastage' | 'production' | null;
+  type: 'reception' | 'wastage' | 'production' | 'report' | null;
   step: string;
   data: Record<string, any>;
 }
