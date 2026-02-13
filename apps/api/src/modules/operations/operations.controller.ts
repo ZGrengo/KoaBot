@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post } from '@nestjs/common';
 import { ReceptionsService } from './receptions.service';
 import { WastagesService } from './wastages.service';
 import { ProductionsService } from './productions.service';
@@ -27,6 +27,24 @@ export class OperationsController {
   async getRecentBatches() {
     const batches = await this.sheetsRepository.getRecentBatchNames(5);
     return { batches };
+  }
+
+  @Get('supplier-products/:supplierName')
+  async getSupplierProducts(@Param('supplierName') supplierName: string) {
+    const products = await this.sheetsRepository.getSupplierProducts(supplierName);
+    return { products };
+  }
+
+  @Get('wastage-products')
+  async getWastageProducts() {
+    const products = await this.sheetsRepository.getWastageProducts();
+    return { products };
+  }
+
+  @Get('production-outputs-template/:batchName')
+  async getProductionOutputsTemplate(@Param('batchName') batchName: string) {
+    const outputs = await this.sheetsRepository.getProductionOutputsTemplate(batchName);
+    return { outputs };
   }
 
   @Post('undo')

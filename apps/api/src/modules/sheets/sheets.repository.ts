@@ -66,6 +66,23 @@ export class SheetsRepository implements OnModuleInit {
       'product',
       'quantity',
       'unit'
+    ],
+    supplier_products: [
+      'supplier_name',
+      'ref',
+      'product',
+      'default_unit'
+    ],
+    wastage_products: [
+      'ref',
+      'product',
+      'default_unit'
+    ],
+    production_outputs_template: [
+      'batch_name',
+      'ref',
+      'product',
+      'default_unit'
     ]
   };
 
@@ -425,6 +442,75 @@ export class SheetsRepository implements OnModuleInit {
     }
 
     return null;
+  }
+
+  /**
+   * Get products for a supplier
+   */
+  async getSupplierProducts(supplierName: string): Promise<Array<{
+    ref: string;
+    product: string;
+    default_unit: string;
+  }>> {
+    const products = await this.getRows<{
+      supplier_name: string;
+      ref: string;
+      product: string;
+      default_unit: string;
+    }>('supplier_products');
+
+    return products
+      .filter((p) => p.supplier_name?.toLowerCase() === supplierName.toLowerCase())
+      .map((p) => ({
+        ref: p.ref || 'UNKNOWN',
+        product: p.product || '',
+        default_unit: p.default_unit || 'kg'
+      }));
+  }
+
+  /**
+   * Get common wastage products
+   */
+  async getWastageProducts(): Promise<Array<{
+    ref: string;
+    product: string;
+    default_unit: string;
+  }>> {
+    const products = await this.getRows<{
+      ref: string;
+      product: string;
+      default_unit: string;
+    }>('wastage_products');
+
+    return products.map((p) => ({
+      ref: p.ref || 'UNKNOWN',
+      product: p.product || '',
+      default_unit: p.default_unit || 'kg'
+    }));
+  }
+
+  /**
+   * Get production outputs template for a batch name
+   */
+  async getProductionOutputsTemplate(batchName: string): Promise<Array<{
+    ref: string;
+    product: string;
+    default_unit: string;
+  }>> {
+    const templates = await this.getRows<{
+      batch_name: string;
+      ref: string;
+      product: string;
+      default_unit: string;
+    }>('production_outputs_template');
+
+    return templates
+      .filter((t) => t.batch_name?.toLowerCase() === batchName.toLowerCase())
+      .map((t) => ({
+        ref: t.ref || 'UNKNOWN',
+        product: t.product || '',
+        default_unit: t.default_unit || 'ud'
+      }));
   }
 
   /**

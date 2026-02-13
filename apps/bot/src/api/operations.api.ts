@@ -26,3 +26,41 @@ export async function undoLastOperation(chatId: number): Promise<{ success: bool
   }
 }
 
+export interface Product {
+  ref: string;
+  product: string;
+  default_unit: string;
+}
+
+export async function getSupplierProducts(supplierName: string): Promise<Product[]> {
+  try {
+    const encodedName = encodeURIComponent(supplierName);
+    const response = await axios.get(`${getApiBaseUrl()}/operations/supplier-products/${encodedName}`);
+    return response.data.products || [];
+  } catch (error: any) {
+    console.error('[getSupplierProducts] Error:', error.response?.data || error.message);
+    return [];
+  }
+}
+
+export async function getWastageProducts(): Promise<Product[]> {
+  try {
+    const response = await axios.get(`${getApiBaseUrl()}/operations/wastage-products`);
+    return response.data.products || [];
+  } catch (error: any) {
+    console.error('[getWastageProducts] Error:', error.response?.data || error.message);
+    return [];
+  }
+}
+
+export async function getProductionOutputsTemplate(batchName: string): Promise<Product[]> {
+  try {
+    const encodedName = encodeURIComponent(batchName);
+    const response = await axios.get(`${getApiBaseUrl()}/operations/production-outputs-template/${encodedName}`);
+    return response.data.outputs || [];
+  } catch (error: any) {
+    console.error('[getProductionOutputsTemplate] Error:', error.response?.data || error.message);
+    return [];
+  }
+}
+

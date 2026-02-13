@@ -68,19 +68,61 @@ export function setupCallbacks(bot: Telegraf): void {
     }
 
     // Get supplier from recent list
-    const { getRecentSuppliers } = await import('../api/operations.api');
+    const { getRecentSuppliers, getSupplierProducts } = await import('../api/operations.api');
     const suppliers = await getRecentSuppliers();
     const index = parseInt(match, 10);
     
     if (index >= 0 && index < suppliers.length) {
-      state.data.supplier = suppliers[index];
-      state.step = 'date';
+      const supplierName = suppliers[index];
+      state.data.supplier = supplierName;
+      state.data.selectedItems = state.data.selectedItems || [];
+      state.step = 'products';
       setState(chatId, state);
-      await ctx.answerCbQuery(`Proveedor: ${suppliers[index]}`);
-      await ctx.editMessageText(
-        `📦 Proveedor: ${suppliers[index]}\n\n📅 Selecciona la fecha:`,
-        { reply_markup: createDateKeyboard() }
-      );
+      
+      await ctx.answerCbQuery(`Proveedor: ${supplierName}`);
+      
+      // Fetch products for this supplier
+      try {
+        const products = await getSupplierProducts(supplierName);
+        if (products.length > 0) {
+          const { formatProductTable, createProductKeyboard } = await import('../utils/product-table');
+          const tableText = formatProductTable(products);
+          const keyboard = createProductKeyboard(products, state.data.selectedItems || [], 'reception:product');
+          state.data.availableProducts = products;
+          setState(chatId, state);
+          
+          await ctx.editMessageText(tableText, {
+            parse_mode: 'Markdown',
+            reply_markup: keyboard
+          });
+        } else {
+          // No products found, allow manual input
+          await ctx.editMessageText(
+            `📦 Proveedor: ${supplierName}\n\n` +
+            '📋 No se encontraron productos predefinidos para este proveedor.\n\n' +
+            'Envía los items de la recepción, uno por línea:\n\n' +
+            'Formatos aceptados:\n' +
+            '• "REF; nombre; cantidad; unidad" (ej: "ABC123; Tomate; 10; kg")\n' +
+            '• "nombre cantidad unidad" (ej: "Tomate 10 kg")\n' +
+            '• "cantidad unidad nombre" (ej: "10 kg Tomate")\n' +
+            '• "REF nombre cantidad unidad" (ej: "ABC123 Tomate 10 kg")\n\n' +
+            'Puedes enviar múltiples líneas.'
+          );
+        }
+      } catch (error) {
+        console.error('[supplier callback] Error fetching products:', error);
+        // Fallback to manual input
+        await ctx.editMessageText(
+          `📦 Proveedor: ${supplierName}\n\n` +
+          '📋 Envía los items de la recepción, uno por línea:\n\n' +
+          'Formatos aceptados:\n' +
+          '• "REF; nombre; cantidad; unidad" (ej: "ABC123; Tomate; 10; kg")\n' +
+          '• "nombre cantidad unidad" (ej: "Tomate 10 kg")\n' +
+          '• "cantidad unidad nombre" (ej: "10 kg Tomate")\n' +
+          '• "REF nombre cantidad unidad" (ej: "ABC123 Tomate 10 kg")\n\n' +
+          'Puedes enviar múltiples líneas.'
+        );
+      }
     } else {
       await ctx.answerCbQuery('Proveedor no encontrado');
     }
@@ -152,22 +194,43 @@ export function setupCallbacks(bot: Telegraf): void {
     }
 
     state.data.date = dateStr;
+    state.data.occurredAt = dateStr;
     state.data.dateISO = dateToISO(dateStr);
     setState(chatId, state);
     await ctx.answerCbQuery(`Fecha seleccionada: ${dateStr}`);
     
     // Continue conversation flow
     if (state.type === 'reception') {
-      await ctx.editMessageText(
-        `📅 Fecha: ${dateStr}\n\n📦 Envía los items, uno por línea:\n` +
-        `Formato: "REF; nombre; cantidad; unidad"\n` +
-        `Ejemplo: "ABC123; Tomate; 10; kg"\n\n` +
-        `También puedes usar formatos naturales:\n` +
-        `• "Tomate 10 kg"\n` +
-        `• "10 kg Tomate"\n` +
-        `• "ABC123 Tomate 10 kg"`
-      );
-      state.step = 'items';
+      // Items should already be set from product table or manual input
+      const items = state.data.items || [];
+      if (items.length === 0) {
+        // Fallback: ask for items
+        await ctx.editMessageText(
+          `📅 Fecha: ${dateStr}\n\n📦 Envía los items, uno por línea:\n` +
+          `Formato: "REF; nombre; cantidad; unidad"\n` +
+          `Ejemplo: "ABC123; Tomate; 10; kg"\n\n` +
+          `También puedes usar formatos naturales:\n` +
+          `• "Tomate 10 kg"\n` +
+          `• "10 kg Tomate"\n` +
+          `• "ABC123 Tomate 10 kg"`
+        );
+        state.step = 'items';
+      } else {
+        // Show confirmation
+        state.step = 'confirm';
+        const summary = `📋 *Resumen de Recepción:*\n\n` +
+          `*Proveedor:* ${state.data.supplier}\n` +
+          `*Fecha:* ${dateStr}\n` +
+          `*Items (${items.length}):*\n` +
+          items.map((item: any, i: number) => 
+            `${i + 1}. ${item.ref} - ${item.product} (${item.quantity} ${item.unit})`
+          ).join('\n');
+        
+        await ctx.editMessageText(summary, {
+          parse_mode: 'Markdown',
+          reply_markup: createConfirmationKeyboard()
+        });
+      }
       setState(chatId, state);
     } else if (state.type === 'production') {
       await ctx.editMessageText(
@@ -295,6 +358,163 @@ export function setupCallbacks(bot: Telegraf): void {
       await ctx.editMessageText('✅ Última operación deshecha correctamente.');
     } else {
       await ctx.reply(`❌ ${result.message || 'No se pudo deshacer la operación'}`);
+    }
+  });
+
+  // Handle product table interactions for reception
+  bot.action(/^reception:product:(add|edit|clear|finish|manual|back|qty):(.+)$/, async (ctx) => {
+    const chatId = ctx.chat?.id;
+    if (!chatId) return;
+
+    const action = ctx.match[1];
+    const param = ctx.match[2];
+    const state = getState(chatId);
+
+    if (!state || state.type !== 'reception') {
+      await ctx.answerCbQuery('No hay acción en curso');
+      return;
+    }
+
+    const { formatProductTable, createProductKeyboard, createQuantityKeyboard, formatSelectedItemsSummary, SelectedItem } = await import('../utils/product-table');
+    const products = state.data.availableProducts || [];
+    let selectedItems: SelectedItem[] = state.data.selectedItems || [];
+
+    if (action === 'add') {
+      const index = parseInt(param, 10);
+      if (index >= 0 && index < products.length) {
+        const product = products[index];
+        // Check if already selected
+        const existing = selectedItems.find(
+          (item) => item.ref === product.ref && item.product === product.product
+        );
+        
+        if (existing) {
+          // Show quantity editor
+          const keyboard = createQuantityKeyboard(index, existing.quantity, existing.unit, 'reception:product');
+          await ctx.editMessageReplyMarkup(keyboard);
+          await ctx.answerCbQuery(`Editando: ${product.product}`);
+        } else {
+          // Add with default quantity 1
+          selectedItems.push({
+            ref: product.ref,
+            product: product.product,
+            quantity: 1,
+            unit: product.default_unit
+          });
+          state.data.selectedItems = selectedItems;
+          setState(chatId, state);
+          
+          // Update keyboard
+          const keyboard = createProductKeyboard(products, selectedItems, 'reception:product');
+          await ctx.editMessageReplyMarkup(keyboard);
+          await ctx.answerCbQuery(`✅ ${product.product} agregado`);
+        }
+      }
+    } else if (action === 'qty') {
+      // Format: qty:index:quantity or qty:index:custom
+      const parts = param.split(':');
+      const productIndex = parseInt(parts[0], 10);
+      const qtyStr = parts[1];
+      
+      if (qtyStr === 'custom') {
+        await ctx.answerCbQuery();
+        await ctx.editMessageText(
+          `✏️ Envía la cantidad para "${products[productIndex]?.product}":\n\n` +
+          `Ejemplo: "2.5 kg" o "10 ud"`
+        );
+        state.data.editingProductIndex = productIndex;
+        state.step = 'edit_quantity';
+        setState(chatId, state);
+      } else {
+        const quantity = parseFloat(qtyStr);
+        if (productIndex >= 0 && productIndex < products.length && !isNaN(quantity)) {
+          const product = products[productIndex];
+          const existingIndex = selectedItems.findIndex(
+            (item) => item.ref === product.ref && item.product === product.product
+          );
+          
+          if (existingIndex >= 0) {
+            selectedItems[existingIndex].quantity = quantity;
+          } else {
+            selectedItems.push({
+              ref: product.ref,
+              product: product.product,
+              quantity: quantity,
+              unit: product.default_unit
+            });
+          }
+          
+          state.data.selectedItems = selectedItems;
+          setState(chatId, state);
+          
+          // Update keyboard
+          const keyboard = createProductKeyboard(products, selectedItems, 'reception:product');
+          const tableText = formatProductTable(products);
+          await ctx.editMessageText(tableText, {
+            parse_mode: 'Markdown',
+            reply_markup: keyboard
+          });
+          await ctx.answerCbQuery(`✅ Cantidad actualizada: ${quantity} ${product.default_unit}`);
+        }
+      }
+    } else if (action === 'clear') {
+      selectedItems = [];
+      state.data.selectedItems = selectedItems;
+      setState(chatId, state);
+      
+      const keyboard = createProductKeyboard(products, selectedItems, 'reception:product');
+      await ctx.editMessageReplyMarkup(keyboard);
+      await ctx.answerCbQuery('🗑️ Items limpiados');
+    } else if (action === 'finish') {
+      if (selectedItems.length === 0) {
+        await ctx.answerCbQuery('Agrega al menos un producto');
+        return;
+      }
+      
+      state.data.items = selectedItems.map(item => ({
+        ref: item.ref,
+        product: item.product,
+        quantity: item.quantity,
+        unit: item.unit
+      }));
+      state.step = 'date';
+      setState(chatId, state);
+      
+      const summary = formatSelectedItemsSummary(selectedItems);
+      await ctx.editMessageText(
+        summary + '\n\n📅 Selecciona la fecha de la recepción:',
+        { parse_mode: 'Markdown', reply_markup: createDateKeyboard() }
+      );
+      await ctx.answerCbQuery('✅ Items seleccionados');
+    } else if (action === 'manual') {
+      state.step = 'products';
+      setState(chatId, state);
+      await ctx.answerCbQuery();
+      await ctx.editMessageText(
+        '📋 Envía los items de la recepción, uno por línea:\n\n' +
+        'Formatos aceptados:\n' +
+        '• "REF; nombre; cantidad; unidad" (ej: "ABC123; Tomate; 10; kg")\n' +
+        '• "nombre cantidad unidad" (ej: "Tomate 10 kg")\n' +
+        '• "cantidad unidad nombre" (ej: "10 kg Tomate")\n' +
+        '• "REF nombre cantidad unidad" (ej: "ABC123 Tomate 10 kg")\n\n' +
+        'Puedes enviar múltiples líneas.'
+      );
+    } else if (action === 'back') {
+      const keyboard = createProductKeyboard(products, selectedItems, 'reception:product');
+      const tableText = formatProductTable(products);
+      await ctx.editMessageText(tableText, {
+        parse_mode: 'Markdown',
+        reply_markup: keyboard
+      });
+      await ctx.answerCbQuery();
+    } else if (action === 'edit') {
+      // Show summary and allow editing
+      const summary = formatSelectedItemsSummary(selectedItems);
+      await ctx.editMessageText(
+        summary + '\n\n💡 Haz clic en un producto para editar su cantidad.',
+        { parse_mode: 'Markdown' }
+      );
+      await ctx.answerCbQuery();
     }
   });
 }
